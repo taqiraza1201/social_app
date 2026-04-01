@@ -11,11 +11,13 @@ export default function SignupPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
+  const [requestId, setRequestId] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setRequestId('');
 
     if (form.password !== form.confirmPassword) {
       setError('Passwords do not match');
@@ -30,7 +32,10 @@ export default function SignupPage() {
         body: JSON.stringify({ email: form.email, password: form.password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Signup failed');
+      if (!res.ok) {
+        if (data.requestId) setRequestId(data.requestId);
+        throw new Error(data.error || 'Signup failed');
+      }
       router.push(`/auth/verify?email=${encodeURIComponent(form.email)}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Signup failed');
@@ -55,6 +60,9 @@ export default function SignupPage() {
             {error && (
               <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
                 {error}
+                {process.env.NEXT_PUBLIC_SHOW_REQUEST_ID === 'true' && requestId && (
+                  <p className="mt-1 text-xs text-red-300/70">Request ID: {requestId}</p>
+                )}
               </div>
             )}
 

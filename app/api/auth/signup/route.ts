@@ -1,91 +1,131 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { createServerClient } from '@/lib/supabase/server';
 import { signupSchema } from '@/lib/validations';
 import { generateOTP, getOTPExpiry } from '@/lib/auth';
 import { sendOTPEmail } from '@/lib/email';
 
+/** Deterministic error categories surfaced to callers. */
+type ErrorType =
+  | 'CONFIG_ERROR'
+  | 'DB_CONNECT_ERROR'
+  | 'DB_QUERY_ERROR'
+  | 'EMAIL_EXISTS'
+  | 'VALIDATION_ERROR'
+  | 'INTERNAL_ERROR';
+
+function errorResponse(
+  message: string,
+  errorType: ErrorType,
+  status: number,
+  requestId: string,
+) {
+  return NextResponse.json({ error: message, errorType, requestId }, { status });
+}
+
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
+
   try {
     const body = await request.json();
 
-    // Handle resend case
+    // ── Resend OTP path ──────────────────────────────────────────────────────
     if (body.resend && body.email) {
-      const supabase = createServerClient();
+      let supabase;
+      try {
+        supabase = createServerClient();
+      } catch (initError) {
+        console.error(
+          JSON.stringify({ requestId, stage: 'init', event: 'CONFIG_ERROR', message: initError instanceof Error ? initError.message : String(initError) }),
+        );
+        return errorResponse('Server configuration error', 'CONFIG_ERROR', 500, requestId);
+      }
+
       const otp = generateOTP();
       const expiresAt = getOTPExpiry();
 
-      const { error: otpError } = await supabase.from('otp_codes').insert({
+      const { error: otpError } = await supabase.schema('public').from('otp_codes').insert({
         email: body.email,
         code: otp,
         expires_at: expiresAt.toISOString(),
       });
 
       if (otpError) {
-        console.error('OTP insert error:', otpError);
-        return NextResponse.json({ error: 'Failed to generate OTP' }, { status: 500 });
+        console.error(
+          JSON.stringify({ requestId, stage: 'resend_otp', event: 'DB_QUERY_ERROR', code: otpError.code, message: otpError.message, details: otpError.details, hint: otpError.hint }),
+        );
+        return errorResponse('Failed to generate OTP', 'DB_QUERY_ERROR', 500, requestId);
       }
 
       try {
         await sendOTPEmail(body.email, otp);
       } catch (emailError) {
-        console.error('Email send error (resend):', emailError);
+        console.error(JSON.stringify({ requestId, stage: 'resend_otp', event: 'email_send_failed', message: emailError instanceof Error ? emailError.message : String(emailError) }));
       }
 
-      return NextResponse.json({ message: 'OTP resent' });
+      return NextResponse.json({ message: 'OTP resent', requestId });
     }
 
+    // ── Validate input ───────────────────────────────────────────────────────
     const result = signupSchema.safeParse(body);
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error.errors[0].message },
-        { status: 400 }
-      );
+      return errorResponse(result.error.errors[0].message, 'VALIDATION_ERROR', 400, requestId);
     }
 
     const { email, password } = result.data;
 
+    // ── Initialise Supabase client ───────────────────────────────────────────
     let supabase;
     try {
       supabase = createServerClient();
     } catch (initError) {
-      console.error('Supabase init error:', initError instanceof Error ? initError.message : initError);
-      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+      console.error(
+        JSON.stringify({ requestId, stage: 'init', event: 'CONFIG_ERROR', message: initError instanceof Error ? initError.message : String(initError) }),
+      );
+      return errorResponse('Server configuration error', 'CONFIG_ERROR', 500, requestId);
     }
 
-    // Check if user exists — use maybeSingle() to avoid PGRST116 when no rows found
+    // ── Check if user already exists ─────────────────────────────────────────
+    // maybeSingle() returns null (not an error) when no row found, avoiding
+    // false PGRST116 failures from .single() on an empty result set.
     const { data: existing, error: checkError } = await supabase
+      .schema('public')
       .from('users')
       .select('id')
       .eq('email', email)
       .maybeSingle();
 
     if (checkError) {
-      console.error('User existence check error — code:', checkError.code, '| message:', checkError.message, '| hint:', checkError.hint, '| details:', checkError.details);
-      return NextResponse.json({ error: 'Database error checking account' }, { status: 500 });
+      console.error(
+        JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_QUERY_ERROR', code: checkError.code, message: checkError.message, details: checkError.details, hint: checkError.hint }),
+      );
+      return errorResponse('Database error checking account', 'DB_QUERY_ERROR', 500, requestId);
     }
 
     if (existing) {
-      return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
+      return errorResponse('Email already registered', 'EMAIL_EXISTS', 409, requestId);
     }
 
-    // Hash password
+    // ── Create user ──────────────────────────────────────────────────────────
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user
     const { data: user, error: userError } = await supabase
+      .schema('public')
       .from('users')
       .insert({ email, password_hash: passwordHash, coins: 100 })
       .select()
       .single();
 
     if (userError || !user) {
-      console.error('User creation error — code:', userError?.code, '| message:', userError?.message, '| hint:', userError?.hint);
-      return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
+      console.error(
+        JSON.stringify({ requestId, stage: 'insert_user', event: 'DB_QUERY_ERROR', code: userError?.code, message: userError?.message, details: userError?.details, hint: userError?.hint }),
+      );
+      return errorResponse('Failed to create account', 'DB_QUERY_ERROR', 500, requestId);
     }
 
-    // Record initial coins transaction (non-fatal)
-    const { error: txError } = await supabase.from('transactions').insert({
+    // ── Record welcome transaction (non-fatal) ───────────────────────────────
+    const { error: txError } = await supabase.schema('public').from('transactions').insert({
       user_id: user.id,
       type: 'credit',
       amount: 100,
@@ -93,33 +133,38 @@ export async function POST(request: Request) {
     });
 
     if (txError) {
-      console.error('Welcome transaction error:', txError);
+      console.error(JSON.stringify({ requestId, stage: 'welcome_transaction', event: 'DB_QUERY_ERROR', code: txError.code, message: txError.message }));
     }
 
-    // Generate and store OTP (non-fatal)
+    // ── Generate and store OTP (non-fatal) ───────────────────────────────────
     const otp = generateOTP();
     const expiresAt = getOTPExpiry();
 
-    const { error: otpError } = await supabase.from('otp_codes').insert({
+    const { error: otpError } = await supabase.schema('public').from('otp_codes').insert({
       email,
       code: otp,
       expires_at: expiresAt.toISOString(),
     });
 
     if (otpError) {
-      console.error('OTP insert error:', otpError);
+      console.error(JSON.stringify({ requestId, stage: 'insert_otp', event: 'DB_QUERY_ERROR', code: otpError.code, message: otpError.message }));
     }
 
-    // Send verification email (non-fatal — account is already created)
+    // ── Send verification email (non-fatal) ──────────────────────────────────
     try {
       await sendOTPEmail(email, otp);
     } catch (emailError) {
-      console.error('Email send error:', emailError);
+      console.error(JSON.stringify({ requestId, stage: 'send_otp_email', event: 'email_send_failed', message: emailError instanceof Error ? emailError.message : String(emailError) }));
     }
 
-    return NextResponse.json({ message: 'Account created. Please verify your email.' }, { status: 201 });
+    return NextResponse.json(
+      { message: 'Account created. Please verify your email.', requestId },
+      { status: 201 },
+    );
   } catch (error) {
-    console.error('Signup error:', error instanceof Error ? error.message : error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error(
+      JSON.stringify({ requestId, stage: 'unhandled', event: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) }),
+    );
+    return errorResponse('Internal server error', 'INTERNAL_ERROR', 500, requestId);
   }
 }
