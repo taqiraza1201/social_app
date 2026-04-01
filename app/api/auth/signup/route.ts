@@ -89,18 +89,29 @@ export async function POST(request: Request) {
     // ── Check if user already exists ─────────────────────────────────────────
     // maybeSingle() returns null (not an error) when no row found, avoiding
     // false PGRST116 failures from .single() on an empty result set.
-    const { data: existing, error: checkError } = await supabase
-      .schema('public')
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
+    // Wrapped in try/catch to distinguish network-level failures (DB_CONNECT_ERROR)
+    // from Supabase query errors (DB_QUERY_ERROR).
+    let existing: { id: string } | null;
+    try {
+      const { data, error: checkError } = await supabase
+        .schema('public')
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
 
-    if (checkError) {
+      if (checkError) {
+        console.error(
+          JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_QUERY_ERROR', code: checkError.code, message: checkError.message, details: checkError.details, hint: checkError.hint }),
+        );
+        return errorResponse('Database error checking account', 'DB_QUERY_ERROR', 500, requestId);
+      }
+      existing = data;
+    } catch (connectErr) {
       console.error(
-        JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_QUERY_ERROR', code: checkError.code, message: checkError.message, details: checkError.details, hint: checkError.hint }),
+        JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_CONNECT_ERROR', message: connectErr instanceof Error ? connectErr.message : String(connectErr) }),
       );
-      return errorResponse('Database error checking account', 'DB_QUERY_ERROR', 500, requestId);
+      return errorResponse('Cannot reach database — check Supabase URL and service key', 'DB_CONNECT_ERROR', 503, requestId);
     }
 
     if (existing) {

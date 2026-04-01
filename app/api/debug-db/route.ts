@@ -11,15 +11,25 @@ import { createClient } from '@supabase/supabase-js';
  *
  * Protection: The request must carry the header
  *   x-debug-key: <value of DEBUG_API_KEY env var>
- * If DEBUG_API_KEY is not set the endpoint returns 404 so it is
- * invisible in production deployments that have not opted in.
+ * If DEBUG_API_KEY is not set the endpoint returns 503 with a clear
+ * configuration error so operators know the endpoint exists but needs
+ * the env var to be set before it can be used.
  */
 export async function GET(request: Request) {
+  const requestId = crypto.randomUUID();
   const debugKey = process.env.DEBUG_API_KEY;
 
-  // Disable endpoint when no key is configured
+  // Endpoint is intentionally disabled until DEBUG_API_KEY is configured.
+  // Return 503 (not 404) so operators know the route is present but unconfigured.
   if (!debugKey) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: 'DEBUG_API_KEY env var is not set — add it to your Vercel/Railway environment to enable this endpoint',
+        errorType: 'CONFIG_ERROR',
+        requestId,
+      },
+      { status: 503 },
+    );
   }
 
   // Authenticate the caller — constant-time comparison prevents timing attacks
@@ -35,10 +45,11 @@ export async function GET(request: Request) {
   })();
 
   if (!keysMatch) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized', requestId }, { status: 401 });
   }
 
   const report: Record<string, unknown> = {
+    requestId,
     timestamp: new Date().toISOString(),
     checks: {} as Record<string, unknown>,
   };
