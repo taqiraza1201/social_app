@@ -46,14 +46,15 @@ export async function POST(request: Request) {
     const { email, password } = result.data;
     const supabase = createServerClient();
 
-    // Check if user exists — PGRST116 means "no rows returned" which is expected
+    // Check if user exists — use maybeSingle() to avoid PGRST116 when no rows found
+    console.log('Checking if user exists for domain:', email.split('@')[1]);
     const { data: existing, error: checkError } = await supabase
       .from('users')
       .select('id')
       .eq('email', email)
-      .single();
+      .maybeSingle();
 
-    if (checkError && checkError.code !== 'PGRST116') {
+    if (checkError) {
       console.error('User existence check error:', checkError);
       return NextResponse.json({ error: 'Database error checking account' }, { status: 500 });
     }
