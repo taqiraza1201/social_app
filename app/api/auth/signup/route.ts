@@ -15,13 +15,23 @@ export async function POST(request: Request) {
       const otp = generateOTP();
       const expiresAt = getOTPExpiry();
 
-      await supabase.from('otp_codes').insert({
+      const { error: otpError } = await supabase.from('otp_codes').insert({
         email: body.email,
         code: otp,
         expires_at: expiresAt.toISOString(),
       });
 
-      await sendOTPEmail(body.email, otp);
+      if (otpError) {
+        console.error('OTP insert error:', otpError);
+        return NextResponse.json({ error: 'Failed to generate OTP' }, { status: 500 });
+      }
+
+      try {
+        await sendOTPEmail(body.email, otp);
+      } catch (emailError) {
+        console.error('Email send error (resend):', emailError);
+      }
+
       return NextResponse.json({ message: 'OTP resent' });
     }
 
@@ -36,12 +46,17 @@ export async function POST(request: Request) {
     const { email, password } = result.data;
     const supabase = createServerClient();
 
-    // Check if user exists
-    const { data: existing } = await supabase
+    // Check if user exists — PGRST116 means "no rows returned" which is expected
+    const { data: existing, error: checkError } = await supabase
       .from('users')
       .select('id')
       .eq('email', email)
       .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('User existence check error:', checkError);
+      return NextResponse.json({ error: 'Database error checking account' }, { status: 500 });
+    }
 
     if (existing) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
@@ -58,32 +73,46 @@ export async function POST(request: Request) {
       .single();
 
     if (userError || !user) {
+      console.error('User creation error:', userError);
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
 
-    // Record initial coins transaction
-    await supabase.from('transactions').insert({
+    // Record initial coins transaction (non-fatal)
+    const { error: txError } = await supabase.from('transactions').insert({
       user_id: user.id,
       type: 'credit',
       amount: 100,
       reason: 'Welcome bonus',
     });
 
-    // Generate and send OTP
+    if (txError) {
+      console.error('Welcome transaction error:', txError);
+    }
+
+    // Generate and store OTP (non-fatal)
     const otp = generateOTP();
     const expiresAt = getOTPExpiry();
 
-    await supabase.from('otp_codes').insert({
+    const { error: otpError } = await supabase.from('otp_codes').insert({
       email,
       code: otp,
       expires_at: expiresAt.toISOString(),
     });
 
-    await sendOTPEmail(email, otp);
+    if (otpError) {
+      console.error('OTP insert error:', otpError);
+    }
+
+    // Send verification email (non-fatal — account is already created)
+    try {
+      await sendOTPEmail(email, otp);
+    } catch (emailError) {
+      console.error('Email send error:', emailError);
+    }
 
     return NextResponse.json({ message: 'Account created. Please verify your email.' }, { status: 201 });
   } catch (error) {
-    console.error('Signup error:', error);
+    console.error('Signup error:', error instanceof Error ? error.message : error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
