@@ -44,10 +44,16 @@ export async function POST(request: Request) {
     }
 
     const { email, password } = result.data;
-    const supabase = createServerClient();
+
+    let supabase;
+    try {
+      supabase = createServerClient();
+    } catch (initError) {
+      console.error('Supabase init error:', initError instanceof Error ? initError.message : initError);
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
 
     // Check if user exists — use maybeSingle() to avoid PGRST116 when no rows found
-    console.log('Checking if user exists for domain:', email.split('@')[1]);
     const { data: existing, error: checkError } = await supabase
       .from('users')
       .select('id')
@@ -55,7 +61,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (checkError) {
-      console.error('User existence check error:', checkError);
+      console.error('User existence check error — code:', checkError.code, '| message:', checkError.message, '| hint:', checkError.hint, '| details:', checkError.details);
       return NextResponse.json({ error: 'Database error checking account' }, { status: 500 });
     }
 
@@ -74,7 +80,7 @@ export async function POST(request: Request) {
       .single();
 
     if (userError || !user) {
-      console.error('User creation error:', userError);
+      console.error('User creation error — code:', userError?.code, '| message:', userError?.message, '| hint:', userError?.hint);
       return NextResponse.json({ error: 'Failed to create account' }, { status: 500 });
     }
 
