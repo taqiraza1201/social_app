@@ -53,10 +53,12 @@ export function VerificationCard({ follow, onApprove, onReject, isProcessing }: 
           <div className="text-xs text-gray-500 mb-2">Screenshot Proof</div>
           <a href={follow.screenshot_url} target="_blank" rel="noopener noreferrer">
             <div className="relative w-full h-40 rounded-lg overflow-hidden bg-gray-800 border border-gray-700 hover:border-tiktok-pink transition-colors">
-              <img
+              <Image
                 src={follow.screenshot_url}
                 alt="Follow proof screenshot"
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
+                sizes="(max-width: 768px) 100vw, 400px"
               />
               <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/50 transition-opacity">
                 <span className="text-white text-sm font-medium">View Full Size ↗</span>

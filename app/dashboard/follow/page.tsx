@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -166,7 +167,9 @@ export default function FollowPage() {
                 <label htmlFor="screenshot-upload" className="cursor-pointer">
                   {screenshotUrl ? (
                     <div>
-                      <img src={screenshotUrl} alt="Screenshot" className="max-h-40 mx-auto rounded-lg mb-2" />
+                      <div className="relative max-h-40 mx-auto rounded-lg mb-2 overflow-hidden h-40 w-full">
+                        <Image src={screenshotUrl} alt="Screenshot" fill className="object-contain" unoptimized />
+                      </div>
                       <span className="text-green-400 text-sm">✓ Screenshot uploaded</span>
                     </div>
                   ) : (
