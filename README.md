@@ -164,11 +164,15 @@ vercel env add NEXT_PUBLIC_SUPABASE_URL
 
 ### Using the `/api/debug-db` diagnostic endpoint
 
-The endpoint is disabled (returns 404) unless `DEBUG_API_KEY` is set.
+The endpoint requires `DEBUG_API_KEY` to be set in your environment.  
+If that variable is missing it returns **503** with a clear config-error message (not 404), so you know the route is present but unconfigured.
 
 ```bash
 # Check connectivity and DB access
-curl -H "x-debug-key: <your-DEBUG_API_KEY>" https://your-app.railway.app/api/debug-db
+curl -H "x-debug-key: <your-DEBUG_API_KEY>" https://your-app.vercel.app/api/debug-db
+
+# Without the header (or wrong value) → 401 Unauthorized
+# Without DEBUG_API_KEY env var set   → 503 CONFIG_ERROR
 ```
 
 Example **pass** response:
@@ -201,7 +205,7 @@ Example **fail** response (missing env var):
 | `errorType` | Meaning | Fix |
 |-------------|---------|-----|
 | `CONFIG_ERROR` | Missing `NEXT_PUBLIC_SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` | Add env var to Railway / Vercel |
-| `DB_CONNECT_ERROR` | Cannot reach Supabase | Check Supabase project status and URL |
+| `DB_CONNECT_ERROR` | Cannot reach Supabase (network/DNS failure) | Check Supabase project status and URL; verify env vars are correct |
 | `DB_QUERY_ERROR` | Supabase reachable but query failed | Check RLS policies on `public.users`; run `/api/debug-db` for details |
 | `EMAIL_EXISTS` | Account already registered | Use login instead |
 | `VALIDATION_ERROR` | Invalid email or password format | Check input requirements |
