@@ -146,6 +146,68 @@ vercel env add NEXT_PUBLIC_SUPABASE_URL
 # ... (add all env vars)
 ```
 
+## Signup Troubleshooting
+
+### Required environment variables (Railway / Vercel)
+
+| Variable | Where to set | Notes |
+|----------|-------------|-------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Railway / Vercel env | Public — safe for frontend |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Railway / Vercel env | Public — safe for frontend |
+| `SUPABASE_SERVICE_ROLE_KEY` | Railway / Vercel env | **Server-only** — never expose to browser |
+| `JWT_SECRET` | Railway / Vercel env | Min. 32 random characters |
+| `DEBUG_API_KEY` | Railway / Vercel env | Optional — enables `/api/debug-db` |
+| `NEXT_PUBLIC_SHOW_REQUEST_ID` | Railway / Vercel env | Optional — set to `'true'` to show `requestId` in signup error UI |
+
+> **Railway note**: Runtime secrets are **not** available during `npm run build`.  
+> The Supabase client uses a lazy factory pattern so env-var checks happen at request time, not build time.
+
+### Using the `/api/debug-db` diagnostic endpoint
+
+The endpoint is disabled (returns 404) unless `DEBUG_API_KEY` is set.
+
+```bash
+# Check connectivity and DB access
+curl -H "x-debug-key: <your-DEBUG_API_KEY>" https://your-app.railway.app/api/debug-db
+```
+
+Example **pass** response:
+```json
+{
+  "timestamp": "2024-01-15T10:00:00.000Z",
+  "checks": {
+    "env_supabase_url": { "pass": true, "value_present": true },
+    "env_service_role_key": { "pass": true, "value_present": true },
+    "db_query": { "pass": true, "rows_returned": 0 }
+  },
+  "overall": "pass"
+}
+```
+
+Example **fail** response (missing env var):
+```json
+{
+  "checks": {
+    "env_supabase_url": { "pass": false, "value_present": false },
+    "env_service_role_key": { "pass": false, "value_present": false },
+    "db_query": { "pass": false, "skipped": true, "reason": "Missing required environment variables" }
+  },
+  "overall": "fail"
+}
+```
+
+### Common `errorType` values from `/api/auth/signup`
+
+| `errorType` | Meaning | Fix |
+|-------------|---------|-----|
+| `CONFIG_ERROR` | Missing `NEXT_PUBLIC_SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` | Add env var to Railway / Vercel |
+| `DB_CONNECT_ERROR` | Cannot reach Supabase | Check Supabase project status and URL |
+| `DB_QUERY_ERROR` | Supabase reachable but query failed | Check RLS policies on `public.users`; run `/api/debug-db` for details |
+| `EMAIL_EXISTS` | Account already registered | Use login instead |
+| `VALIDATION_ERROR` | Invalid email or password format | Check input requirements |
+
+All error responses include a `requestId` field. Match this against your Railway / Vercel log stream to find the structured JSON log line for full Supabase error details (`code`, `message`, `details`, `hint`).
+
 ## API Routes
 
 | Method | Endpoint | Description |
