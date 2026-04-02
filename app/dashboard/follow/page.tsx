@@ -5,16 +5,11 @@ import Image from 'next/image';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
 import { AdCard } from '@/components/dashboard/AdCard';
 import type { Ad } from '@/lib/types/database';
 
-interface AdWithFollowStatus extends Ad {
-  alreadyFollowed?: boolean;
-}
-
 export default function FollowPage() {
-  const [ads, setAds] = useState<AdWithFollowStatus[]>([]);
+  const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState('');
@@ -79,12 +74,11 @@ export default function FollowPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission failed');
 
-      setSuccess('Follow submitted! Pending admin verification. You\'ll earn 50 coins once approved.');
+      setSuccess("Follow submitted! Pending admin verification. You'll earn 50 coins once approved.");
       setSelectedAd(null);
       setScreenshotUrl('');
-      setAds((prev) =>
-        prev.map((a) => (a.id === selectedAd.id ? { ...a, alreadyFollowed: true } : a))
-      );
+      // Remove the ad from the feed immediately (user already followed it)
+      setAds((prev) => prev.filter((a) => a.id !== selectedAd.id));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Submission failed');
     } finally {
@@ -95,7 +89,7 @@ export default function FollowPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white">Browse & Follow</h1>
+        <h1 className="text-3xl font-bold text-white">Browse &amp; Follow</h1>
         <p className="text-gray-400 mt-1">Follow TikTok creators and earn 50 coins per approved follow</p>
       </div>
 
@@ -119,7 +113,6 @@ export default function FollowPage() {
               ad={ad}
               showFollowAction
               onFollow={() => setSelectedAd(ad)}
-              alreadyFollowed={ad.alreadyFollowed}
             />
           ))}
         </div>
@@ -209,3 +202,4 @@ export default function FollowPage() {
     </div>
   );
 }
+

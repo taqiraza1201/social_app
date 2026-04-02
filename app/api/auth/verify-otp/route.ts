@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { verifyOTPSchema } from '@/lib/validations';
 import { signUserToken } from '@/lib/auth';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
     const result = verifyOTPSchema.safeParse(body);
 
     if (!result.success) {
@@ -13,13 +18,23 @@ export async function POST(request: Request) {
     }
 
     const { email, otp } = result.data;
+
+    // Rate-limit OTP attempts per email: 5 attempts per 10 minutes
+    const rl = rateLimit(`verify-otp:${email}`, 5, 10 * 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many verification attempts. Please request a new code.' },
+        { status: 429 },
+      );
+    }
+
     const supabase = createServerClient();
 
     // Find valid OTP
     const { data: otpRecord } = await supabase
       .from('otp_codes')
       .select('*')
-      .eq('email', email)
+      .eq('email', email.toLowerCase().trim())
       .eq('code', otp)
       .eq('used', false)
       .gt('expires_at', new Date().toISOString())
@@ -38,7 +53,7 @@ export async function POST(request: Request) {
     const { data: user } = await supabase
       .from('users')
       .update({ is_verified: true })
-      .eq('email', email)
+      .eq('email', email.toLowerCase().trim())
       .select()
       .single();
 
@@ -64,3 +79,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
