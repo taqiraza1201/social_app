@@ -91,12 +91,13 @@ export async function POST(request: Request) {
     // while the unique constraint on users.email handles duplicates atomically.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    const { data: user, error: userError } = await supabase
+    const { data: insertedUsers, error: userError } = await supabase
       .schema('public')
       .from('users')
       .insert({ email, password_hash: passwordHash, coins: 100 })
-      .select()
-      .single();
+      .select();
+
+    const user = insertedUsers?.[0] ?? null;
 
     if (userError || !user) {
       // Postgres unique-constraint violation (code 23505) → duplicate email.

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { createServerClient } from '@/lib/supabase/server';
 import { loginSchema } from '@/lib/validations';
 import { signUserToken } from '@/lib/auth';
+import { getErrorMessage } from '@/lib/utils';
 
 export async function POST(request: Request) {
   try {
@@ -14,13 +15,25 @@ export async function POST(request: Request) {
     }
 
     const { email, password } = result.data;
-    const supabase = createServerClient();
 
-    const { data: user } = await supabase
+    let supabase;
+    try {
+      supabase = createServerClient();
+    } catch (initError) {
+      console.error('Login config error:', getErrorMessage(initError));
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    const { data: user, error: dbError } = await supabase
       .from('users')
       .select('*')
       .eq('email', email)
-      .single();
+      .maybeSingle();
+
+    if (dbError) {
+      console.error('Login DB error:', dbError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
 
     if (!user) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });

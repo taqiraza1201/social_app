@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { verifyOTPSchema } from '@/lib/validations';
 import { signUserToken } from '@/lib/auth';
+import { getErrorMessage } from '@/lib/utils';
 
 export async function POST(request: Request) {
   try {
@@ -13,10 +14,17 @@ export async function POST(request: Request) {
     }
 
     const { email, otp } = result.data;
-    const supabase = createServerClient();
+
+    let supabase;
+    try {
+      supabase = createServerClient();
+    } catch (initError) {
+      console.error('Verify-OTP config error:', getErrorMessage(initError));
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
 
     // Find valid OTP
-    const { data: otpRecord } = await supabase
+    const { data: otpRecord, error: otpDbError } = await supabase
       .from('otp_codes')
       .select('*')
       .eq('email', email)
@@ -25,7 +33,12 @@ export async function POST(request: Request) {
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (otpDbError) {
+      console.error('Verify-OTP DB error:', otpDbError);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
 
     if (!otpRecord) {
       return NextResponse.json({ error: 'Invalid or expired OTP code' }, { status: 400 });
@@ -35,14 +48,18 @@ export async function POST(request: Request) {
     await supabase.from('otp_codes').update({ used: true }).eq('id', otpRecord.id);
 
     // Verify user
-    const { data: user } = await supabase
+    const { data: updatedUsers, error: updateError } = await supabase
       .from('users')
       .update({ is_verified: true })
       .eq('email', email)
-      .select()
-      .single();
+      .select();
 
-    if (!user) {
+    const user = updatedUsers?.[0] ?? null;
+
+    if (updateError || !user) {
+      if (updateError) {
+        console.error('Verify-OTP user update error:', updateError);
+      }
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
