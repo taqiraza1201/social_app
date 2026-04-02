@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { signupSchema } from '@/lib/validations';
 import { generateOTP, getOTPExpiry } from '@/lib/auth';
 import { sendOTPEmail } from '@/lib/email';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 type ErrorType =
   | 'CONFIG_ERROR'
@@ -20,6 +21,16 @@ function errorResponse(message: string, errorType: ErrorType, status: number, re
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
+
+  // Rate-limit by IP: 10 signup/resend requests per hour
+  const ip = getClientIp(request);
+  const rl = rateLimit(`signup:${ip}`, 10, 60 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.', errorType: 'RATE_LIMITED', requestId },
+      { status: 429 },
+    );
+  }
 
   try {
     // ✅ prevent hard crash on invalid/empty JSON body
@@ -42,6 +53,24 @@ export async function POST(request: Request) {
       }
 
       const email = String((body as any).email).toLowerCase().trim();
+
+      // Verify the user actually exists and is not yet verified
+      const { data: existingUser } = await supabase
+        .schema('public')
+        .from('users')
+        .select('id, is_verified')
+        .eq('email', email)
+        .single();
+
+      if (!existingUser) {
+        // Return generic message to avoid email enumeration
+        return NextResponse.json({ message: 'OTP resent', requestId });
+      }
+
+      if (existingUser.is_verified) {
+        return errorResponse('Account is already verified. Please log in.', 'DB_QUERY_ERROR', 400, requestId);
+      }
+
       const otp = generateOTP();
       const expiresAt = getOTPExpiry();
 
@@ -169,4 +198,5 @@ export async function POST(request: Request) {
     }));
     return errorResponse('Internal server error', 'INTERNAL_ERROR', 500, requestId);
   }
-           }
+}
+

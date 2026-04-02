@@ -23,22 +23,17 @@ export async function GET(request: Request) {
 
     const followedIds = followedAdIds?.map((f) => f.ad_id) ?? [];
 
-    let query = supabase
+    const { data: ads } = await supabase
       .from('ads')
       .select('*')
       .eq('status', 'active')
       .neq('user_id', payload.userId) // Don't show own ads
       .order('created_at', { ascending: false });
 
-    const { data: ads } = await query;
+    // Filter out ads the user has already submitted a follow for (requirement: never show again)
+    const filteredAds = (ads ?? []).filter((ad) => !followedIds.includes(ad.id));
 
-    // Mark which ones the user has already submitted a follow for
-    const adsWithStatus = (ads ?? []).map((ad) => ({
-      ...ad,
-      alreadyFollowed: followedIds.includes(ad.id),
-    }));
-
-    return NextResponse.json({ ads: adsWithStatus });
+    return NextResponse.json({ ads: filteredAds });
   } catch (error) {
     console.error('GET /api/ads error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -2,7 +2,6 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { verifyAdminToken } from '@/lib/auth';
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +10,7 @@ const adminNav = [
   { href: '/admin/verifications', label: 'Verifications', icon: '✅' },
   { href: '/admin/users', label: 'Users', icon: '👤' },
   { href: '/admin/ads', label: 'Ads', icon: '📢' },
+  { href: '/admin/contact', label: 'Messages', icon: '✉️' },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="flex min-h-screen bg-gray-950">
       {/* Admin Sidebar */}
-      <aside className="w-60 min-h-screen bg-gray-900 border-r border-gray-800">
+      <aside className="w-60 min-h-screen bg-gray-900 border-r border-gray-800 flex flex-col">
         <div className="p-6 border-b border-gray-800">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔐</span>
@@ -34,7 +34,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </div>
         </div>
 
-        <nav className="p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1">
           {adminNav.map((item) => (
             <Link
               key={item.href}
@@ -47,7 +47,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           ))}
         </nav>
 
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="p-4 border-t border-gray-800">
           <form action="/api/admin/logout" method="POST">
             <button className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-gray-400 hover:text-red-400 hover:bg-red-400/10 transition-all">
               🚪 Sign Out
@@ -62,3 +62,4 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     </div>
   );
 }
+

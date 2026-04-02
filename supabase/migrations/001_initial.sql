@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS otp_codes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Contact messages table
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_ads_user_id ON ads(user_id);
 CREATE INDEX IF NOT EXISTS idx_ads_status ON ads(status);
@@ -74,14 +84,14 @@ CREATE INDEX IF NOT EXISTS idx_follows_ad_id ON follows(ad_id);
 CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_codes(email);
-
--- Row Level Security
+CREATE INDEX IF NOT EXISTS idx_contact_messages_user_id ON contact_messages(user_id);
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE follows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE otp_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
 
 -- Service role bypass (used by our API with service role key)
 -- All operations go through API routes using service role key, so we allow all for service role
@@ -91,6 +101,7 @@ CREATE POLICY "Service role full access follows" ON follows FOR ALL USING (true)
 CREATE POLICY "Service role full access transactions" ON transactions FOR ALL USING (true);
 CREATE POLICY "Service role full access admin_users" ON admin_users FOR ALL USING (true);
 CREATE POLICY "Service role full access otp_codes" ON otp_codes FOR ALL USING (true);
+CREATE POLICY "Service role full access contact_messages" ON contact_messages FOR ALL USING (true);
 
 -- Supabase Storage bucket for screenshots
 INSERT INTO storage.buckets (id, name, public) VALUES ('screenshots', 'screenshots', true)

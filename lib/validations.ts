@@ -45,6 +45,11 @@ export const verificationActionSchema = z.object({
   rejection_reason: z.string().optional(),
 });
 
+export const contactMessageSchema = z.object({
+  subject: z.string().min(3, 'Subject must be at least 3 characters').max(200, 'Subject too long'),
+  message: z.string().min(10, 'Message must be at least 10 characters').max(5000, 'Message too long'),
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type VerifyOTPInput = z.infer<typeof verifyOTPSchema>;
@@ -52,3 +57,5 @@ export type CreateAdInput = z.infer<typeof createAdSchema>;
 export type SubmitFollowInput = z.infer<typeof submitFollowSchema>;
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 export type VerificationActionInput = z.infer<typeof verificationActionSchema>;
+export type ContactMessageInput = z.infer<typeof contactMessageSchema>;
+

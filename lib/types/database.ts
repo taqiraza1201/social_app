@@ -183,6 +183,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      contact_messages: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          email: string;
+          subject: string;
+          message: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          email: string;
+          subject: string;
+          message: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          email?: string;
+          subject?: string;
+          message?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -196,3 +223,4 @@ export type Follow = Database['public']['Tables']['follows']['Row'];
 export type Transaction = Database['public']['Tables']['transactions']['Row'];
 export type AdminUser = Database['public']['Tables']['admin_users']['Row'];
 export type OtpCode = Database['public']['Tables']['otp_codes']['Row'];
+export type ContactMessage = Database['public']['Tables']['contact_messages']['Row'];

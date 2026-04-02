@@ -10,6 +10,7 @@ const navItems = [
   { href: '/dashboard/ads/create', label: 'Create Ad', icon: '➕' },
   { href: '/dashboard/follow', label: 'Browse & Follow', icon: '👥' },
   { href: '/dashboard/transactions', label: 'Transactions', icon: '💰' },
+  { href: '/dashboard/contact', label: 'Contact Support', icon: '✉️' },
 ];
 
 interface SidebarProps {

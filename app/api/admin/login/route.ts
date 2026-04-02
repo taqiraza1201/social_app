@@ -3,11 +3,26 @@ import bcrypt from 'bcryptjs';
 import { createServerClient } from '@/lib/supabase/server';
 import { adminLoginSchema } from '@/lib/validations';
 import { signAdminToken } from '@/lib/auth';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 import type { AdminUser } from '@/lib/types/database';
 
 export async function POST(request: Request) {
+  // Strict rate limit for admin: 5 attempts per 15 minutes per IP
+  const ip = getClientIp(request);
+  const rl = rateLimit(`admin-login:${ip}`, 5, 15 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Please try again later.' },
+      { status: 429 },
+    );
+  }
+
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
     const result = adminLoginSchema.safeParse(body);
 
     if (!result.success) {
@@ -25,12 +40,12 @@ export async function POST(request: Request) {
 
     const admin = adminData as AdminUser | null;
 
-    if (!admin) {
-      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-    }
+    // Use constant-time comparison indirectly: always run bcrypt.compare to prevent timing attacks
+    const dummyHash = '$2b$12$invalidhashfortimingnormalization000000000000000000000';
+    const hashToCompare = admin ? admin.password_hash : dummyHash;
+    const passwordMatch = await bcrypt.compare(password, hashToCompare);
 
-    const passwordMatch = await bcrypt.compare(password, admin.password_hash);
-    if (!passwordMatch) {
+    if (!admin || !passwordMatch) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
@@ -51,3 +66,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
