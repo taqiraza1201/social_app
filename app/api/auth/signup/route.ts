@@ -86,39 +86,9 @@ export async function POST(request: Request) {
       return errorResponse('Server configuration error', 'CONFIG_ERROR', 500, requestId);
     }
 
-    // ── Check if user already exists ─────────────────────────────────────────
-    // maybeSingle() returns null (not an error) when no row found, avoiding
-    // false PGRST116 failures from .single() on an empty result set.
-    // Wrapped in try/catch to distinguish network-level failures (DB_CONNECT_ERROR)
-    // from Supabase query errors (DB_QUERY_ERROR).
-    let existing: { id: string } | null;
-    try {
-      const { data, error: checkError } = await supabase
-        .schema('public')
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-
-      if (checkError) {
-        console.error(
-          JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_QUERY_ERROR', code: checkError.code, message: checkError.message, details: checkError.details, hint: checkError.hint }),
-        );
-        return errorResponse('Database error checking account', 'DB_QUERY_ERROR', 500, requestId);
-      }
-      existing = data;
-    } catch (connectErr) {
-      console.error(
-        JSON.stringify({ requestId, stage: 'check_existing_user', event: 'DB_CONNECT_ERROR', message: connectErr instanceof Error ? connectErr.message : String(connectErr) }),
-      );
-      return errorResponse('Cannot reach database — check Supabase URL and service key', 'DB_CONNECT_ERROR', 503, requestId);
-    }
-
-    if (existing) {
-      return errorResponse('Email already registered', 'EMAIL_EXISTS', 409, requestId);
-    }
-
-    // ── Create user ──────────────────────────────────────────────────────────
+    // ── Create user (direct insert — rely on DB unique constraint) ───────────
+    // Skipping a pre-check SELECT avoids a class of DB_QUERY_ERROR failures
+    // while the unique constraint on users.email handles duplicates atomically.
     const passwordHash = await bcrypt.hash(password, 12);
 
     const { data: user, error: userError } = await supabase
@@ -129,6 +99,21 @@ export async function POST(request: Request) {
       .single();
 
     if (userError || !user) {
+      // Postgres unique-constraint violation (code 23505) → duplicate email.
+      // Secondary fallback: Supabase occasionally wraps the code in the message/details
+      // for the email column specifically; "email" + "duplicate|unique" together avoids
+      // matching unrelated unique violations on other columns.
+      const msg = userError?.message ?? '';
+      const details = userError?.details ?? '';
+      const isDuplicate =
+        userError?.code === '23505' ||
+        (/duplicate|unique/i.test(msg) && /email/i.test(msg)) ||
+        (/duplicate|unique/i.test(details) && /email/i.test(details));
+
+      if (isDuplicate) {
+        return errorResponse('An account with this email already exists', 'EMAIL_EXISTS', 409, requestId);
+      }
+
       console.error(
         JSON.stringify({ requestId, stage: 'insert_user', event: 'DB_QUERY_ERROR', code: userError?.code, message: userError?.message, details: userError?.details, hint: userError?.hint }),
       );
